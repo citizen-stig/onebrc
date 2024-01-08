@@ -2,7 +2,7 @@ mod calculator;
 
 use std::env;
 use std::fs::File;
-use std::io::{self, BufRead};
+use std::io;
 
 // just count lines 39.47s user
 
@@ -13,8 +13,6 @@ use std::io::{self, BufRead};
 
 
 // cargo run --release -- ../../community/1brc/measurements.txt  95.46s user 2.10s system 98% cpu 1:38.82 total
-
-
 
 
 fn main() {

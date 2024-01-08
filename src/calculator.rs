@@ -4,13 +4,14 @@
 // Amsterdam;12.7
 
 use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
 use std::io::BufRead;
 
 #[derive(Debug)]
 struct Measurement {
     min: f64,
     max: f64,
-    average: f64,
+    sum: f64,
     count: f64,
 }
 
@@ -19,29 +20,41 @@ impl Measurement {
         Self {
             min: value,
             max: value,
-            average: value,
+            sum: value,
             count: 1.0,
         }
     }
 
     fn record_value(&mut self, value: f64) {
         self.count += 1.0;
-
-        // Then calculate the new average
-        let new_average = self.average + (value - self.average) / self.count;
-
+        //
+        // // Then calculate the new average
+        // let new_average = self.average + (value - self.average) / self.count;
+        //
         if value < self.min {
             self.min = value;
         }
         if value > self.max {
             self.max = value;
         }
-        self.average = new_average;
+        self.sum += value;
+        // self.average = new_average;
+    }
+}
+
+impl Display for Measurement {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        // <min>/<mean>/<max>
+        let mean = self.sum / self.count;
+        write!(f, "{}/{:.1}/{}", self.min, mean, self.max)
     }
 }
 
 pub fn calculate_values<R: BufRead>(reader: R) {
     // let line_count = reader.lines().count();
+
+
+
 
     let mut data: HashMap<String, Measurement> = HashMap::new();
 
@@ -57,7 +70,10 @@ pub fn calculate_values<R: BufRead>(reader: R) {
         }
     }
 
-    println!("OUTPUT: {:?}", data);
+    // println!("OUTPUT: {:?}", data);
+    for (city, measurement) in data.iter() {
+        println!("{}={}", city, measurement);
+    }
 
     // println!("File has {} lines", line_count);
 }
