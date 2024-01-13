@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::io::BufRead;
 use std::sync::mpsc;
+use std::sync::mpsc::Receiver;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -59,6 +60,26 @@ impl Display for Measurement {
     }
 }
 
+fn line_worker(rx: Receiver<String>) -> HashMap<String, Measurement>{
+    let worker_start = Instant::now();
+    let mut data: HashMap<String, Measurement> = HashMap::new();
+    let mut total_line_processing = Duration::new(0, 0);
+    while let Ok(line) = rx.recv() {
+        let n = Instant::now();
+        let mut parts = line.split(';');
+
+        if let (Some(city), Some(value)) = (parts.next(), parts.next()) {
+            let value = value.parse::<f64>().unwrap();
+            data.entry(city.to_string()).and_modify(|e| e.record_value(value)).or_insert(Measurement::new(value));
+        } else {
+            println!("Data is not in the expected format.");
+        }
+        total_line_processing += n.elapsed();
+    }
+    println!("WORKER HAS COMPLETED IN {:?}, WHICH SPENT PROCESSING LINE: {:?}", worker_start.elapsed(), total_line_processing);
+    data
+}
+
 
 pub fn calculate_values<R: BufRead>(reader: R) {
     let start = Instant::now();
@@ -72,23 +93,7 @@ pub fn calculate_values<R: BufRead>(reader: R) {
         let (tx, rx) = mpsc::channel::<String>();
 
         let handle = thread::spawn(move || {
-            let worker_start = Instant::now();
-            let mut data: HashMap<String, Measurement> = HashMap::new();
-            let mut total_line_processing = Duration::new(0, 0);
-            while let Ok(line) = rx.recv() {
-                let n = Instant::now();
-                let mut parts = line.split(';');
-
-                if let (Some(city), Some(value)) = (parts.next(), parts.next()) {
-                    let value = value.parse::<f64>().unwrap();
-                    data.entry(city.to_string()).and_modify(|e| e.record_value(value)).or_insert(Measurement::new(value));
-                } else {
-                    println!("Data is not in the expected format.");
-                }
-                total_line_processing += n.elapsed();
-            }
-            println!("WORKER HAS COMPLETED IN {:?}, WHICH SPENT PROCESSING LINE: {:?}", worker_start.elapsed(), total_line_processing);
-            data
+            line_worker(rx)
         });
         senders.push(tx);
         handles.push(handle);
