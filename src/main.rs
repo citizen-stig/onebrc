@@ -12,7 +12,11 @@ use std::io;
 // sys	0m3.299s
 
 
+// Single Naive
 // cargo run --release -- ../../community/1brc/measurements.txt  95.46s user 2.10s system 98% cpu 1:38.82 total
+// Multi Threaded ( 2 threads) =)
+// cargo run --release -- ../../community/1brc/measurements.txt  300.15s user 45.06s system 257% cpu 2:14.03 total
+
 
 
 fn main() {

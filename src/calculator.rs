@@ -6,6 +6,9 @@
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::io::BufRead;
+use std::sync::mpsc;
+use std::thread;
+use std::time::{Duration, Instant};
 
 #[derive(Debug)]
 struct Measurement {
@@ -27,10 +30,6 @@ impl Measurement {
 
     fn record_value(&mut self, value: f64) {
         self.count += 1.0;
-        //
-        // // Then calculate the new average
-        // let new_average = self.average + (value - self.average) / self.count;
-        //
         if value < self.min {
             self.min = value;
         }
@@ -38,7 +37,17 @@ impl Measurement {
             self.max = value;
         }
         self.sum += value;
-        // self.average = new_average;
+    }
+
+    fn merge(&mut self, other: Measurement) {
+        self.count += other.count;
+        self.sum += other.sum;
+        if other.min < self.min {
+            self.min = other.min;
+        }
+        if other.max > self.max {
+            self.max = other.max
+        }
     }
 }
 
@@ -50,32 +59,76 @@ impl Display for Measurement {
     }
 }
 
+
 pub fn calculate_values<R: BufRead>(reader: R) {
-    // let line_count = reader.lines().count();
+    let start = Instant::now();
+    let num_workers = 4;
 
+    let mut senders = Vec::with_capacity(num_workers);
+    let mut handles = Vec::with_capacity(num_workers);
 
+    for _ in 0..num_workers {
+        // let (tx, rx) = mpsc::sync_channel::<String>(1000000);
+        let (tx, rx) = mpsc::channel::<String>();
 
+        let handle = thread::spawn(move || {
+            let worker_start = Instant::now();
+            let mut data: HashMap<String, Measurement> = HashMap::new();
+            let mut total_line_processing = Duration::new(0, 0);
+            while let Ok(line) = rx.recv() {
+                let n = Instant::now();
+                let mut parts = line.split(';');
 
-    let mut data: HashMap<String, Measurement> = HashMap::new();
+                if let (Some(city), Some(value)) = (parts.next(), parts.next()) {
+                    let value = value.parse::<f64>().unwrap();
+                    data.entry(city.to_string()).and_modify(|e| e.record_value(value)).or_insert(Measurement::new(value));
+                } else {
+                    println!("Data is not in the expected format.");
+                }
+                total_line_processing += n.elapsed();
+            }
+            println!("WORKER HAS COMPLETED IN {:?}, WHICH SPENT PROCESSING LINE: {:?}", worker_start.elapsed(), total_line_processing);
+            data
+        });
+        senders.push(tx);
+        handles.push(handle);
+    }
+    println!("Threads are started in {:?}", start.elapsed());
 
-    for line_result in reader.lines() {
+    let mut channel_total_duration = Duration::new(0, 0);
+
+    for (idx, line_result) in reader.lines().enumerate() {
         let line = line_result.expect("Failed to read line");
-        let mut parts = line.split(';');
+        let worker_index = idx % num_workers;
+        let n= Instant::now();
+        senders[worker_index].send(line).unwrap();
+        channel_total_duration += n.elapsed();
+    }
+    println!("ALL LINES HAS BEEN READ in {:?}, channel work {:?}", start.elapsed(), channel_total_duration);
 
-        if let (Some(city), Some(value)) = (parts.next(), parts.next()) {
-            let value = value.parse::<f64>().unwrap();
-            data.entry(city.to_string()).and_modify(|e| e.record_value(value)).or_insert(Measurement::new(value));
-        } else {
-            println!("Data is not in the expected format.");
+    drop(senders);
+    let merging = Instant::now();
+    let mut final_results: HashMap<String, Measurement> = HashMap::with_capacity(10000);
+    for handle in handles {
+        let partial_results = handle.join().unwrap();
+        for (key, value) in partial_results {
+            match final_results.entry(key) {
+                std::collections::hash_map::Entry::Vacant(e) => {
+                    e.insert(value);
+                }
+                std::collections::hash_map::Entry::Occupied(mut e) => {
+                    e.get_mut().merge(value);
+                }
+            }
         }
     }
+    println!("Merging is done in {:?}, total {:?}", merging.elapsed(), start.elapsed());
 
-    // println!("OUTPUT: {:?}", data);
-    for (city, measurement) in data.iter() {
-        println!("{}={}", city, measurement);
-    }
 
-    // println!("File has {} lines", line_count);
+    println!("FINAL RESULTS: {}", final_results.len());
+    // for (city, measurement) in final_results.iter() {
+    //     println!("{}={}", city, measurement);
+    // }
 }
 
 #[cfg(test)]
